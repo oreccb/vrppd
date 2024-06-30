@@ -24,10 +24,10 @@ virtualenv --python=/Library/Frameworks/Python.framework/Versions/3.9/bin/python
 source venv/bin/activate
 pip install -r ./requirements.txt
 
-# Run baselone algorithm on a single problem
+# Run baseline algorithm on a single problem
 python3 main.py ./training_problems/problem1.txt
 
-# Visualize the solution using matplotlib (hard to see for 200 truck problems)
+# Visualize the solution using matplotlib (hard to see for 200 load problems)
 python3 main.py ./training_problems/problem1.txt --visualize
 
 # Run evaluation on training set using baseline algorithm (see below for variants)
@@ -84,6 +84,4 @@ mean run time: 22455.513155460358ms
 ## References
 
 - [Notes](https://www2.isye.gatech.edu/~mgoetsch/cali/VEHICLE/TSP/TSP007__.HTM) from Professor Goetschalckx at Georgia Tech about TSP.
-- This section of [Urban Opoerations Reasearch book](https://web.mit.edu/urban_or_book/www/book/chapter6/6.4.12.html) from MIT had a great description of the Clarke and Wright Savings algorithm.
-
-
+- This section of [Urban Operations Research book](https://web.mit.edu/urban_or_book/www/book/chapter6/6.4.12.html) from MIT had a great description of the Clarke and Wright Savings algorithm.
