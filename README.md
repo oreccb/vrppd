@@ -1,8 +1,5 @@
 # Vehicle Routing Problem with Pickup and Delivery
 
-
-
-
 This VRP specifies a set of loads to be completed efficiently by an unbounded number of drivers.
 
 Each load has a pickup location and a dropoff location, each specified by a Cartesian point. A driver completes a load by driving to the pickup location, picking up the load, driving to the dropoff, and dropping off the load. The time required to drive from one point to another, in minutes, is the Euclidean distance between them. That is, to drive from `(x1, y1)` to `(x2, y2)` takes `sqrt((x2-x1)^2 + (y2-y1)^2)` minutes.
@@ -27,37 +24,61 @@ virtualenv --python=/Library/Frameworks/Python.framework/Versions/3.9/bin/python
 source venv/bin/activate
 pip install -r ./requirements.txt
 
-# Run on a single problem
+# Run baselone algorithm on a single problem
 python3 main.py ./training_problems/problem1.txt
 
-# Visualize a solution
+# Visualize the solution using matplotlib (hard to see for 200 truck problems)
 python3 main.py ./training_problems/problem1.txt --visualize
 
-# Run evaluation on training set
+# Run evaluation on training set using baseline algorithm (see below for variants)
 python3 evaluateShared.py --cmd "python3 main.py" --problemDir "./training_problems/"
 ```
 
 ## Approaches
 
-### Baseline Clarke and Wright
+### Clarke and Wright Savings Algorithm
 The baseline solver uses the Clarke and Wright Savings algorithm slightly adapted for the pickup and delivery variant of the vehicle routing problem where the distance matrix is not symmetric since the order matters in the order of handling loads because of the requirement to pick it up and drop it off somewhere else vs just traversing a set of dropoff points.
 
-Result:
 ```
-# Running: python3 main.py ./training_problems/problem1.txt
+# python3 evaluateShared.py --cmd "python3 main.py" --problemDir "./training_problems/"
+
 mean cost: 44270.4103171508
 mean run time: 766.927170753479ms
 ```
 
-### Clarke and Wright with randomness
+### Clarke and Wright + Savings List Sort Randomness
 
-I tried to see if adding some randomness in how the savings list is processed could reduce the cost with enough attempts at the solution. This worked to a small degree on the training set but greatly increases the run time. 
+I tried to see if adding some randomness in how the savings list is processed could reduce the cost with enough attempts at the solution. This worked to a small degree on the training set but greatly increases the run time as I gave the processing a time budget. 
 
-Result:
 ```
-python3 main.py --random-swap-factor=0.4 ./training_problems/problem1.txt --random-swap-factor=0.4 
-mean cost: 43666.36985363955
-mean run time: 26415.309476852417ms
+# python3 evaluateShared.py --cmd "python3 main.py --random-swap-factor=0.4" --problemDir "./training_problems/"
+
+mean cost: 43631.67307082187
+mean run time: 20817.545199394226ms
+```
+
+### Clarke and Wright + Local Search improvements
+
+I implemented a local search, load swap based scheme for improving the initial solution. This improves the solution a tiny bit at the cost of some extra runtime. There is room for better local search methods I think.
+
+```
+# python3 evaluateShared.py --cmd "python3 main.py --local-search-iterations=3" --problemDir "./training_problems/"
+
+mean cost: 44193.623381979036
+mean run time: 4443.475341796875ms
+```
+
+### Clarke and Wright + Local Search improvements + Savings List Sort Randomness
+
+I then ran with both local search and randomness modifications. 
+I believe that this will produce the best result without a runtime budget.
+But in my testing with runtime budget less than 30 seconds, it was worse than just randomness since the local search eats into the runtime so there are less solver iterations to try.
+
+```
+# python3 evaluateShared.py --cmd "python3 main.py --local-search-iterations=1 --random-swap-factor=0.4" --problemDir "./training_problems/"
+
+mean cost: 43659.285336497924
+mean run time: 22455.513155460358ms
 ```
 
 ## References

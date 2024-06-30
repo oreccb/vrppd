@@ -3,14 +3,8 @@ import argparse
 from evaluateShared import loadProblemFromFile
 from visualize import visualize
 import clarke_wright
-import utils
 import logging
 import time
-
-
-def print_solution(solution):
-    for truck in solution:
-        print(truck)
 
 
 if __name__ == '__main__':
@@ -24,6 +18,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Description of your program')
     parser.add_argument("input_path", help='path to input file with problem')
     parser.add_argument("--random-swap-factor", dest='random_swap_factor', required=False, type=float)
+    parser.add_argument("--local-search-iterations", dest='local_search_iterations', required=False, type=int)
     parser.add_argument("--visualize", required=False, action='store_true')
     args = parser.parse_args()
 
@@ -35,20 +30,23 @@ if __name__ == '__main__':
     logging.debug(vrp_problem)
 
     if args.random_swap_factor:
-        solution, cost = clarke_wright.Solver(vrp_problem).solve()
-        #print(f"Initial Solution Cost: {cost}")
-        t_end = time.time() + 25  # run for ~25 seconds, really should just time the first solve to tune this better
+        solution, cost = clarke_wright.Solver(vrp_problem, local_search_iterations=args.local_search_iterations).solve()
+        logging.warning(f"Initial Solution Cost: {cost}")
+        t_end = time.time() + 20  # approx run for ~20 seconds
         while time.time() < t_end:
-            tmp_solution, tmp_cost = clarke_wright.Solver(vrp_problem, random_swap_factor=args.random_swap_factor).solve()
+            tmp_solution, tmp_cost = clarke_wright.Solver(vrp_problem,
+                                                          random_swap_factor=args.random_swap_factor,
+                                                          local_search_iterations=args.local_search_iterations).solve()
             if tmp_cost < cost:
                 solution = tmp_solution
                 cost = tmp_cost
-                #print(f"Better Solution Cost: {cost}")
+                logging.warning(f"Better Solution Cost: {cost}")
     else:
-        solution, cost = clarke_wright.Solver(vrp_problem).solve()
+        solution, cost = clarke_wright.Solver(vrp_problem, local_search_iterations=args.local_search_iterations).solve()
+        logging.warning(f"Solution Cost: {cost}")
 
-    print_solution(solution)
-    #logging.warning(f"Solution Cost: {cost}")
+    for truck in solution:
+        print(truck)
 
     if args.visualize:
         visualize(vrp_problem.loads, solution)

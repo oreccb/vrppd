@@ -1,12 +1,12 @@
-from collections import defaultdict, deque
+from collections import deque
 import logging
-from evaluateShared import Point, VRP, Load
+from evaluateShared import Point, VRP
 import utils
 import numpy as np
 
 
 class LoadSaving:
-    """ Cost savings for clarke/wright algorithm """
+    """ Cost savings representation for clarke and wright algorithm """
     def __init__(self, current_load_id, next_load_id, savings):
         self.current_load_id = current_load_id
         self.next_load_id = next_load_id
@@ -40,7 +40,7 @@ class Truck:
         self.load_ids.append(load_id)
 
     def __str__(self):
-        return str(self.load_ids)
+        return str(f"Current Dist: {self.current_distance}. Loads: {self.load_ids}")
 
     def _new_add_right_dist(self, load_id):
         curr_last_load_id = self.load_ids[-1]
@@ -59,6 +59,7 @@ class Truck:
                 + self.dist_matrix[load_id, curr_first_load_id])
 
     def add_load_right(self, load_id):
+        """ Add load to end of this truck's route """
         new_dist = self._new_add_right_dist(load_id)
         if new_dist > self.ss.distance_constraint:
             raise Exception(f"Code error: Invalid truck when adding: {load_id}. new_dist: {new_dist}, current_distance: {self.current_distance}")
@@ -66,17 +67,20 @@ class Truck:
         self.load_ids.append(load_id)
 
     def can_link_right(self, load_id):
+        """ Check if this truck can add this load at the end of its route """
         new_dist = self._new_add_right_dist(load_id)
         return new_dist <= self.ss.distance_constraint
 
     def add_load_left(self, load_id):
+        """ Add load to start of this truck's route """
         new_dist = self._new_add_left_dist(load_id)
         if new_dist > self.ss.distance_constraint:
-            raise Exception("Code error: Invalid truck!")
+            raise Exception(f"Code error: Invalid truck when adding: {load_id}. new_dist: {new_dist}, current_distance: {self.current_distance}")
         self.current_distance = new_dist
         self.load_ids.appendleft(load_id)
 
     def can_link_left(self, load_id):
+        """ Check if this truck can add this load at the start of its route """
         new_dist = self._new_add_left_dist(load_id)
         return new_dist <= self.ss.distance_constraint
 
@@ -87,6 +91,7 @@ class Truck:
         return self.load_ids[-1]
 
     def can_merge(self, truck):
+        """ Check if the given truck's route can be merged with this one """
         curr_last_load_id = self.load_ids[-1]
         next_truck_first_load_id = truck.load_ids[0]
         merged_dist = (((self.current_distance
@@ -100,21 +105,26 @@ class Truck:
         return False
 
     def merge(self, truck):
+        """ Merge the given truck's route into this one """
         for load_id in truck.load_ids:
             self.add_load_right(load_id)
 
 
 class Solver:
-    def __init__(self, vrp: VRP, random_swap_factor=None):
+    def __init__(self, vrp: VRP, random_swap_factor=None, local_search_iterations=None):
         self.vrp = vrp
         self.ss = StaticState(vrp)
         self.depot_id = self.ss.depot_id
         self.dist_matrix = self.ss.dist_matrix
         self.random_swap_factor = random_swap_factor
+        self.local_search_iterations = local_search_iterations
         logging.debug("distance matrix: \n" + str(self.dist_matrix))
 
     def solve(self):
-        trucks = self.run_clarke_wright()
+        trucks, truck_by_load = self.run_clarke_wright()
+        if self.local_search_iterations:
+            for i in range(self.local_search_iterations):
+                self.local_search_improvement(trucks, truck_by_load)
 
         solution = [list(truck.load_ids) for truck in trucks]
         expected_loads = len(self.dist_matrix) - 1
@@ -177,16 +187,22 @@ class Solver:
             if load_id not in truck_by_load:
                 new_truck = Truck(self.ss, load_id)
                 trucks.append(new_truck)
+                truck_by_load[load_id] = new_truck
                 logging.warning(f"Bootstrapped Truck with single load: {load_id}, distance: {new_truck.current_distance}")
 
-        return trucks
+        return trucks, truck_by_load
 
     def create_savings(self):
-        # I need to slightly modify the clarke/wright savings formula to incorporate pickup/dropoff correctly
-        #  since the distance matrix is not symmetric
-        # Full Formula:  S(i,j) = d(D, i_p) + d(i_p, i_d) + d(i_d, D) + d(D, j_p) + d(j_p, j_d) + d(j_d, D) -
-        #             (d(D, i_p) + d(i_p, i_d) + d(i_d, j_p) + d(j_p, j_d) + d(j_d, D))
-        # Simplifies to: S(i,j) = d(i_d, D) + d(D, j_p) - d(i_d, j_p)
+        """
+        Create the clarke/wright savings list.
+
+        I need to slightly modify the formula to incorporate pickup/dropoff correctly
+            since the distance matrix is not symmetric.
+
+        Full Formula:  S(i,j) = d(D, i_p) + d(i_p, i_d) + d(i_d, D) + d(D, j_p) + d(j_p, j_d) + d(j_d, D) -
+                               (d(D, i_p) + d(i_p, i_d) + d(i_d, j_p) + d(j_p, j_d) + d(j_d, D))
+        Simplifies to: S(i,j) = d(i_d, D) + d(D, j_p) - d(i_d, j_p)
+        """
         savings_list = []
         num_loads = len(self.dist_matrix)
         for i in range(1, num_loads):
@@ -200,24 +216,55 @@ class Solver:
 
     def local_search_improvement(self, trucks, truck_by_load):
         """
-        Maybe I can run a variant of clarke/wright after I create the initial solution.
-        I would iterate over every load i
-            iterate over every truck
-            for load j in truck (if not i)
-                determine cost savings by swapping i and j (and maybe add/remove from truck)
-        Notes: I will have to build a few functions to Truck:
-        clone, substitute_load, remove_load_left, remove_load_right
+        Idea here is to test out swapped loads between trucks to see if we can get a better solution
+
+        Not implemented right now is another variant: moving a single load to another truck
         """
         num_loads = len(self.dist_matrix)
         for i in range(1, num_loads):
             for j in range(1, num_loads):
                 if i == j:
-                    i_truck = truck_by_load.get(i)
-                    j_truck = truck_by_load.get(j)
-                    i_truck_clone = i_truck.clone()
-                    j_truck_clone = j_truck.clone()
+                    continue
+                self.swap_if_better(trucks, truck_by_load, i, j)
 
-                    i_truck_clone.substitute(i, j)
-                    j_truck_clone.substitute(j, i)
-                    # TODO check if solution is better
-                    # TODO still working on this
+    def swap_if_better(self, trucks, truck_by_load, load_i, load_j):
+        """ If we can swap loads i and j to make a reduced cost, swap them in place """
+        i_truck = truck_by_load.get(load_i)
+        j_truck = truck_by_load.get(load_j)
+        if i_truck == j_truck:
+            return
+        distance_total = i_truck.current_distance + j_truck.current_distance
+
+        new_i_truck = self.swap_load(i_truck, load_i, load_j)
+        new_j_truck = self.swap_load(j_truck, load_j, load_i)
+        if new_i_truck is not None and new_j_truck is not None:
+            new_distance_total = new_i_truck.current_distance + new_j_truck.current_distance
+            if new_distance_total < distance_total:
+                logging.warning(f"Found better cost to substitution! {load_i} with {load_j}.")
+                for load_id in new_i_truck.load_ids:
+                    truck_by_load[load_id] = new_i_truck
+                trucks.remove(i_truck)
+                trucks.append(new_i_truck)
+                for load_id in new_j_truck.load_ids:
+                    truck_by_load[load_id] = new_j_truck
+                trucks.remove(j_truck)
+                trucks.append(new_j_truck)
+
+    def swap_load(self, truck, curr_load_id, new_load_id):
+        """ Builds a new truck with the swapped loads """
+        loads_copy = truck.load_ids.copy()
+        curr_load_idx = loads_copy.index(curr_load_id)
+        loads_copy[curr_load_idx] = new_load_id
+
+        new_truck = None
+        for load_id in loads_copy:
+            if new_truck is None:
+                new_truck = Truck(self.ss, load_id)
+            else:
+                if new_truck.can_link_right(load_id):
+                    new_truck.add_load_right(load_id)
+                else:
+                    logging.info(f"Failed to substitute {curr_load_id} with {new_load_id}, in Truck: {truck}")
+                    return None
+        logging.info(f"Succeeded in substituting {curr_load_id} with {new_load_id}, Old Truck: {truck}, New Truck: {new_truck}")
+        return new_truck
